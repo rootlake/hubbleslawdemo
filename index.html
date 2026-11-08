@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hubble's Law Demo</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd; font: 14px system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: pointer; }
+  #ui { position: fixed; top: 12px; left: 12px; background: rgba(8,4,4,.85); border: 1px solid #5a1d1a; padding: 10px 14px; border-radius: 8px; width: 260px; }
+  #ui input { accent-color: #c0392b; }
+  #ui label { display: block; margin: 6px 0; }
+  #ui input[type=range] { width: 100%; }
+  #ui [hidden] { display: none; }
+  #ui p { margin: 0 0 6px; font-size: 12px; color: #aaa; }
+  #reset { width: 100%; margin-top: 6px; padding: 6px; background: #1a0a09; color: #f0d6d3; border: 1px solid #a8322b; border-radius: 6px; cursor: pointer; font: inherit; }
+  #reset:hover { background: #a8322b; }
+  #ui .credit { margin: 8px 0 0; font-size: 10px; color: #777; }
+  #hide { position: absolute; top: 6px; right: 8px; background: none; border: 0; color: #aaa; cursor: pointer; font-size: 12px; }
+  #hide:hover { color: #fff; }
+  #ui[hidden], #show[hidden] { display: none; }
+  #show { position: fixed; top: 12px; left: 12px; background: rgba(8,4,4,.7); color: #e8b4ae; border: 1px solid #a8322b; border-radius: 6px; padding: 6px 10px; cursor: pointer; opacity: .5; }
+  #show:hover { opacity: 1; }
+  .seg { display: flex; margin: 8px 0; border: 1px solid #a8322b; border-radius: 6px; overflow: hidden; }
+  .seg button { flex: 1; padding: 6px; background: transparent; color: #bbb; border: 0; cursor: pointer; font: inherit; }
+  .seg button.on { background: #c0392b; color: #fff; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<button id="show" hidden title="Show controls (H)">☰ Controls</button>
+<div id="ui">
+  <button id="hide" title="Hide (H)">Hide ✕</button>
+  <p>Click a galaxy to make it home.<br>H hides this panel.</p>
+  <div class="seg" id="mode"><button class="on" data-mode="hubble">Hubble</button><button data-mode="ellipses">Simple</button></div>
+  <label id="densityRow" hidden>Density <input id="density" type="range" min="40" max="450" step="10" value="250"></label>
+  <label>Layers <span id="nv"></span><input id="layers" type="range" min="1" max="7" step="1" value="5"></label>
+  <label>Expansion per layer <input id="scale" type="range" min="0" max="0.06" step="0.002" value="0.02"></label>
+  <label>Redshift tint <input id="tint" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+  <label><input id="arrows" type="checkbox"> Velocity arrows</label>
+  <label><input id="anim" type="checkbox"> Animate expansion</label>
+  <button id="reset" title="Back to the start: home at center, expansion waiting for a click">Reset</button>
+  <p class="credit" id="credit">Hubble Ultra Deep Field — NASA, ESA, S. Beckwith (STScI) &amp; the HUDF Team</p>
+</div>
+<script>
+// [x, y, r] of the brightest galaxies, as fractions of the image size (found offline from hudf.jpg)
+const HUDF_GAL = [[0.7831, 0.7927, 0.0225], [0.1992, 0.8014, 0.0198], [0.4623, 0.7629, 0.0173], [0.122, 0.3252, 0.0143], [0.2333, 0.8548, 0.0132], [0.5788, 0.4173, 0.0175], [0.3876, 0.1572, 0.0135], [0.7225, 0.9216, 0.012], [0.4644, 0.9692, 0.0124], [0.0468, 0.8202, 0.0121], [0.7316, 0.016, 0.0128], [0.4212, 0.0903, 0.0114], [0.8409, 0.6869, 0.0105], [0.5941, 0.4994, 0.0129], [0.3573, 0.0926, 0.011], [0.3922, 0.8248, 0.0109], [0.4239, 0.9702, 0.0129], [0.4477, 0.698, 0.0108], [0.2703, 0.1153, 0.0126], [0.4437, 0.7914, 0.0123], [0.3304, 0.5839, 0.0125], [0.2933, 0.2682, 0.0101], [0.7716, 0.4465, 0.0115], [0.8553, 0.0941, 0.009], [0.267, 0.2864, 0.0095], [0.5198, 0.507, 0.0098], [0.8583, 0.9066, 0.0113], [0.3974, 0.4986, 0.008], [0.5992, 0.6243, 0.0105], [0.0112, 0.275, 0.0092], [0.4008, 0.7376, 0.0077], [0.6694, 0.1886, 0.0078], [0.4018, 0.3135, 0.008], [0.9343, 0.9733, 0.0099], [0.3074, 0.0905, 0.0093], [0.2364, 0.153, 0.0083], [0.4164, 0.3791, 0.0093], [0.7956, 0.2034, 0.0075], [0.6364, 0.5276, 0.008], [0.1517, 0.1862, 0.0078], [0.3493, 0.3452, 0.009], [0.4212, 0.5962, 0.0077], [0.0275, 0.0863, 0.0088], [0.2297, 0.4915, 0.0076], [0.7826, 0.0259, 0.0083], [0.2563, 0.2644, 0.0072], [0.0454, 0.6103, 0.0069], [0.8229, 0.3068, 0.0064], [0.0885, 0.3897, 0.0066], [0.8117, 0.5059, 0.0072], [0.0877, 0.4371, 0.0062], [0.6223, 0.4884, 0.0065], [0.6846, 0.9671, 0.0058], [0.6781, 0.9289, 0.0065], [0.9616, 0.6483, 0.0061], [0.0545, 0.8678, 0.0061], [0.4514, 0.5831, 0.0059], [0.614, 0.4312, 0.006], [0.13, 0.2481, 0.0057], [0.2575, 0.79, 0.0063], [0.0878, 0.8156, 0.0055], [0.5467, 0.6564, 0.0065], [0.6964, 0.6873, 0.0059], [0.8958, 0.8653, 0.0061], [0.7058, 0.451, 0.0059], [0.1547, 0.631, 0.0065], [0.2145, 0.6761, 0.0065], [0.0371, 0.5954, 0.0059], [0.6186, 0.0737, 0.0058], [0.034, 0.5573, 0.0062], [0.4068, 0.2585, 0.0058], [0.585, 0.8173, 0.0058], [0.6943, 0.4358, 0.0053], [0.5869, 0.3855, 0.0065], [0.5683, 0.5451, 0.0055], [0.954, 0.1207, 0.0053], [0.737, 0.4043, 0.0055], [0.7885, 0.9081, 0.0064], [0.247, 0.1799, 0.0049], [0.1815, 0.4544, 0.0053], [0.0311, 0.749, 0.005], [0.4422, 0.1213, 0.0053], [0.6217, 0.2042, 0.0049], [0.8773, 0.7559, 0.0055], [0.4022, 0.0302, 0.0049], [0.4095, 0.8742, 0.0054], [0.0634, 0.532, 0.0052], [0.4715, 0.3571, 0.0055], [0.673, 0.262, 0.0048], [0.8104, 0.8489, 0.0057], [0.9827, 0.5788, 0.0055], [0.6229, 0.4685, 0.0048], [0.448, 0.7223, 0.0051], [0.3112, 0.6024, 0.0053], [0.4134, 0.1098, 0.0052], [0.0275, 0.9541, 0.0053], [0.6079, 0.4738, 0.0056], [0.4871, 0.5837, 0.0048], [0.4063, 0.5498, 0.0042], [0.495, 0.1399, 0.0046], [0.3868, 0.4636, 0.0055], [0.1955, 0.7077, 0.0056], [0.3172, 0.4151, 0.0045], [0.5095, 0.1101, 0.0045], [0.4883, 0.2465, 0.0045], [0.2242, 0.6397, 0.0054], [0.0126, 0.9844, 0.0054], [0.2232, 0.6954, 0.0044], [0.8369, 0.6504, 0.0044], [0.1936, 0.5889, 0.0041], [0.7247, 0.5352, 0.005], [0.1197, 0.0818, 0.0052], [0.5852, 0.784, 0.0044], [0.5327, 0.6423, 0.0044], [0.6553, 0.7865, 0.0043], [0.207, 0.512, 0.0045], [0.4452, 0.4199, 0.0042], [0.8854, 0.602, 0.0047], [0.0356, 0.7252, 0.0043], [0.6594, 0.5459, 0.0049], [0.9372, 0.4078, 0.0045], [0.2927, 0.2524, 0.0052], [0.1818, 0.1445, 0.0041], [0.9702, 0.9366, 0.0045], [0.3693, 0.3816, 0.0046], [0.2789, 0.0378, 0.0044], [0.7471, 0.7856, 0.0041], [0.8966, 0.6634, 0.0039], [0.7921, 0.0535, 0.005], [0.6108, 0.3024, 0.0043], [0.7039, 0.2763, 0.004], [0.4499, 0.4414, 0.0042], [0.9276, 0.0314, 0.0047], [0.3101, 0.1388, 0.004], [0.2444, 0.3943, 0.004], [0.3094, 0.1266, 0.0042], [0.1452, 0.5649, 0.0048], [0.8276, 0.5523, 0.0042], [0.6561, 0.5335, 0.004], [0.7311, 0.8615, 0.0039], [0.4842, 0.0027, 0.0041], [0.8351, 0.523, 0.0044], [0.997, 0.9294, 0.0039], [0.4784, 0.7429, 0.0045], [0.1527, 0.9193, 0.0037], [0.2128, 0.1812, 0.0039], [0.9598, 0.5338, 0.0038], [0.1654, 0.2254, 0.0045], [0.4132, 0.6346, 0.0041], [0.9368, 0.7292, 0.0038], [0.2461, 0.6001, 0.0049], [0.4256, 0.2496, 0.0039], [0.3132, 0.2738, 0.0039], [0.7396, 0.4779, 0.0045], [0.2429, 0.7744, 0.0041], [0.1561, 0.2537, 0.005], [0.3172, 0.5199, 0.0038], [0.5762, 0.9916, 0.0042], [0.635, 0.2753, 0.0037], [0.3374, 0.7839, 0.0042], [0.232, 0.5333, 0.004], [0.501, 0.2583, 0.0036], [0.4753, 0.1715, 0.0038], [0.2234, 0.0791, 0.0039], [0.3773, 0.2678, 0.0038], [0.4139, 0.4985, 0.0039], [0.2595, 0.076, 0.0036], [0.114, 0.1884, 0.0036], [0.7312, 0.4613, 0.0035], [0.6008, 0.8673, 0.0038], [0.5055, 0.465, 0.0035], [0.9407, 0.893, 0.0036], [0.3783, 0.0277, 0.0036], [0.4437, 0.5724, 0.0041], [0.7905, 0.3064, 0.0039], [0.3861, 0.196, 0.004], [0.4611, 0.0389, 0.0036], [0.1735, 0.1753, 0.0037], [0.9624, 0.0562, 0.0037], [0.2125, 0.7619, 0.0037], [0.0632, 0.0054, 0.0036], [0.4253, 0.1984, 0.0037], [0.5169, 0.664, 0.0038], [0.078, 0.8456, 0.0039], [0.8487, 0.7604, 0.0036], [0.7462, 0.6803, 0.0041], [0.349, 0.4711, 0.0039], [0.7391, 0.5006, 0.0035], [0.7841, 0.4336, 0.0036], [0.7749, 0.3185, 0.0035], [0.0765, 0.6183, 0.0034], [0.891, 0.314, 0.0036], [0.8461, 0.6282, 0.0033], [0.4661, 0.1291, 0.0034], [0.4613, 0.4405, 0.0036], [0.6997, 0.6682, 0.0037], [0.9371, 0.3396, 0.0039], [0.5964, 0.6914, 0.0036], [0.6752, 0.3597, 0.0036], [0.8997, 0.2557, 0.0032], [0.5213, 0.4859, 0.0037], [0.3679, 0.1169, 0.0032], [0.5214, 0.2107, 0.0035], [0.5379, 0.916, 0.0032], [0.6147, 0.8063, 0.0033], [0.988, 0.1824, 0.0033], [0.4656, 0.9401, 0.0038], [0.4036, 0.8057, 0.0031], [0.931, 0.5272, 0.0032], [0.0797, 0.6773, 0.0033], [0.012, 0.8736, 0.0038], [0.1486, 0.644, 0.0036], [0.2315, 0.1329, 0.0034], [0.8761, 0.9974, 0.0032], [0.6144, 0.2746, 0.003], [0.7089, 0.2402, 0.0035], [0.2917, 0.9064, 0.0034], [0.8129, 0.2883, 0.0031], [0.0978, 0.1845, 0.0034], [0.1134, 0.1739, 0.0034], [0.0986, 0.5893, 0.0032], [0.596, 0.9535, 0.0036], [0.49, 0.6169, 0.003], [0.2084, 0.2309, 0.0033], [0.4802, 0.1316, 0.0035], [0.2688, 0.08, 0.0036], [0.2898, 0.3656, 0.0036], [0.1605, 0.997, 0.0032], [0.635, 0.6762, 0.003], [0.778, 0.0014, 0.0029], [0.3886, 0.4861, 0.0037], [0.5914, 0.9941, 0.0037], [0.3027, 0.2472, 0.0032], [0.458, 0.6288, 0.0033], [0.3034, 0.2768, 0.0033], [0.2552, 0.88, 0.0031], [0.2535, 0.6348, 0.003], [0.8386, 0.5055, 0.003], [0.68, 0.0364, 0.0031], [0.3136, 0.1767, 0.0032], [0.3615, 0.0478, 0.0032], [0.7015, 0.0215, 0.0034], [0.0086, 0.0396, 0.0032], [0.6905, 0.0443, 0.0032], [0.3275, 0.626, 0.0033], [0.961, 0.0954, 0.0033], [0.0873, 0.3437, 0.0031], [0.9918, 0.7413, 0.0034], [0.0315, 0.8533, 0.0031], [0.5127, 0.5463, 0.003]];
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+const img = new Image(); img.src = 'hudf.jpg';
+let W, H, S, ox, oy, center, home;
+let field = img, gal = HUDF_GAL;  // whatever gets layered, and its clickable galaxies
+// Each new home runs a fresh demo: cut to a single stacked image (reveal = 0), then expand (0→1)
+let reveal = 0, held = true, lastT = 0;  // held: stay stacked until a click
+const goHome = g => { home = g; reveal = 0; };
+
+// Ellipses mode: paint random ellipses into a square canvas that stands in for the photo
+function makeEllipses(n) {
+  const N = 2048, c = document.createElement('canvas'), g = c.getContext('2d');
+  c.width = c.height = N;
+  g.fillStyle = '#ebebeb';
+  const list = Array.from({ length: n }, () => {
+    const x = Math.random(), y = Math.random(), r = (6 + Math.random() ** 2 * 24) / N;
+    g.beginPath();
+    g.ellipse(x * N, y * N, r * N, r * N * (0.3 + Math.random() * 0.7), Math.random() * Math.PI, 0, Math.PI * 2);
+    g.fill();
+    return [x, y, r];
+  });
+  return [c, list];
+}
+function setMode() {
+  const ell = $('mode').querySelector('.on').dataset.mode === 'ellipses';
+  $('densityRow').hidden = !ell;
+  $('credit').hidden = ell;
+  [field, gal] = ell ? makeEllipses(+$('density').value) : [img, HUDF_GAL];
+  goHome(nearest(center.x, center.y));
+}
+$('density').oninput = setMode;
+$('mode').onclick = e => {
+  if (!e.target.dataset.mode) return;
+  for (const b of $('mode').children) b.classList.toggle('on', b === e.target);
+  setMode();
+};
+
+function resize() {
+  const dpr = devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  S = Math.max(W, H); ox = (W - S) / 2; oy = (H - S) / 2;  // cover-fit the square image
+}
+const pos = g => ({ x: ox + g[0] * S, y: oy + g[1] * S });
+const nearest = (x, y) => gal.reduce((a, g) => {
+  const p = pos(g), q = pos(a);
+  return Math.hypot(p.x - x, p.y - y) < Math.hypot(q.x - x, q.y - y) ? g : a;
+});
+
+// Layer i is the whole field scaled by s = 1 + i·k about `center`: p' = c + s(p - c).
+// Every galaxy shifts by i·k·(p - c), i.e. proportional to its distance from home: Hubble's law.
+function frame(t) {
+  const dt = Math.min(0.1, (t - lastT) / 1000); lastT = t;
+  center = pos(home);
+  if (!held) reveal = Math.min(1, reveal + dt / 2);
+  const ease = reveal * reveal * (3 - 2 * reveal);  // smoothstep
+  const n = +$('layers').value;
+  let k = +$('scale').value * ease;
+  if ($('anim').checked) k *= (1 - Math.cos(t / 1200)) / 2;
+  $('nv').textContent = n;
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  if (field !== img || img.complete) {
+    ctx.globalCompositeOperation = 'screen';  // black adds nothing, so layers stack like transparent clones
+    for (let i = n - 1; i >= 0; i--) {
+      const s = 1 + i * k;
+      ctx.globalAlpha = i ? 0.75 * (1 - i / n) : 1;  // older-looking trail fades out
+      ctx.drawImage(field, center.x + s * (ox - center.x), center.y + s * (oy - center.y), S * s, S * s);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Redshift overlay: multiply by white at home fading to red with distance
+  const tint = +$('tint').value * ease, R = Math.hypot(W, H) * 0.6;
+  const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, R);
+  grad.addColorStop(0, '#fff');
+  grad.addColorStop(1, `rgb(255,${255 * (1 - 0.8 * tint)},${255 * (1 - 0.95 * tint)})`);
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'source-over';
+
+  if ($('arrows').checked) {
+    // arrow = shift from base layer to outermost layer; length grows with distance from home
+    const d = (n - 1) * (+$('scale').value) * ease;
+    ctx.lineWidth = 2;
+    for (const g of gal.slice(0, 120)) {
+      if (g === home) continue;
+      const p = pos(g), dx = d * (p.x - center.x), dy = d * (p.y - center.y), L = Math.hypot(dx, dy);
+      if (L < 2) continue;
+      const f = Math.min(1, Math.hypot(p.x - center.x, p.y - center.y) / R);  // white near home → red far away
+      ctx.strokeStyle = ctx.fillStyle = `rgb(255,${255 - 200 * f},${255 - 220 * f})`;
+      const ux = dx / L, uy = dy / L, ex = p.x + dx, ey = p.y + dy;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ex, ey);
+      ctx.lineTo(ex - 7 * ux - 4 * uy, ey - 7 * uy + 4 * ux); ctx.lineTo(ex - 7 * ux + 4 * uy, ey - 7 * uy - 4 * ux);
+      ctx.fill();
+    }
+  }
+
+  if (home) {
+    const h = pos(home);
+    ctx.strokeStyle = '#e0453a'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(h.x, h.y, home[2] * S + 10, 0, Math.PI * 2); ctx.stroke();
+  }
+  requestAnimationFrame(frame);
+}
+
+cv.addEventListener('click', e => { held = false; goHome(nearest(e.clientX, e.clientY)); });
+
+// Reset = page-load state: sliders back to their defaults, layers collapsed until the next click
+$('reset').onclick = () => {
+  for (const el of $('ui').querySelectorAll('input:not(#density)'))
+    el.type === 'checkbox' ? el.checked = el.defaultChecked : el.value = el.defaultValue;
+  held = true;
+  goHome(nearest(W / 2, H / 2));
+};
+
+const toggleUI =() => { $('show').hidden = !($('ui').hidden = !$('ui').hidden); };
+$('hide').onclick = $('show').onclick = toggleUI;
+addEventListener('keydown', e => { if (e.key === 'h' || e.key === 'H') toggleUI(); });
+addEventListener('resize', resize);
+
+resize();
+home = nearest(W / 2, H / 2);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
